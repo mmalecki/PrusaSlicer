@@ -4867,7 +4867,7 @@ bool GLCanvas3D::_render_arrange_menu(float pos_x)
         settings_changed = true;
     }
 
-    if (imgui->slider_float(_L("Spacing from bed"), &settings.distance_from_bed, dist_bed_min, 100.0f, "%5.2f") || dist_bed_min > settings.distance_from_bed) {
+    if (imgui->slider_float(_L("Spacing from bed edge"), &settings.distance_from_bed, dist_bed_min, 100.0f, "%5.2f") || dist_bed_min > settings.distance_from_bed) {
         settings.distance_from_bed = std::max(dist_bed_min, settings.distance_from_bed);
         settings_out.distance_from_bed = settings.distance_from_bed;
         appcfg->set("arrange", dist_bed_key.c_str(), float_to_string_decimal_point(settings_out.distance_from_bed));
