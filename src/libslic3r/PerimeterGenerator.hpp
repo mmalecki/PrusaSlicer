@@ -1,3 +1,9 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas
+///|/ Copyright (c) Slic3r 2015 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_PerimeterGenerator_hpp_
 #define slic3r_PerimeterGenerator_hpp_
 
@@ -70,6 +76,7 @@ void process_classic(
     const Parameters           &params,
     const Surface              &surface,
     const ExPolygons           *lower_slices,
+    const ExPolygons           *upper_slices,
     // Cache:
     Polygons                   &lower_slices_polygons_cache,
     // Output:
@@ -85,6 +92,7 @@ void process_arachne(
     const Parameters           &params,
     const Surface              &surface,
     const ExPolygons           *lower_slices,
+    const ExPolygons           *upper_slices,
     // Cache:
     Polygons                   &lower_slices_polygons_cache,
     // Output:

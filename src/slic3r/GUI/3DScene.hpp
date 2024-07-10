@@ -1,3 +1,14 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka, Tomáš Mészáros @tamasmeszaros, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv, David Kocík @kocikdav, Vojtěch Král @vojtechkral
+///|/ Copyright (c) 2017 Eyal Soha @eyal0
+///|/ Copyright (c) Slic3r 2015 Alessandro Ranellucci @alranel
+///|/
+///|/ ported from lib/Slic3r/GUI/3DScene.pm:
+///|/ Copyright (c) Prusa Research 2016 - 2019 Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka
+///|/ Copyright (c) Slic3r 2013 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2013 Guillaume Seguin @iXce
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_3DScene_hpp_
 #define slic3r_3DScene_hpp_
 
@@ -8,6 +19,9 @@
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Color.hpp"
+#include "libslic3r/ObjectID.hpp"
+
+#include "slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.hpp"
 
 #include "GLModel.hpp"
 #include "MeshUtils.hpp"
@@ -59,6 +73,10 @@ public:
     static const ColorRGBA SLA_PAD_COLOR;
     static const ColorRGBA NEUTRAL_COLOR;
     static const std::array<ColorRGBA, 4> MODEL_COLOR;
+    static const ColorRGBA NEGATIVE_VOLUME_COLOR;
+    static const ColorRGBA PARAMETER_MODIFIER_COLOR;
+    static const ColorRGBA SUPPORT_BLOCKER_COLOR;
+    static const ColorRGBA SUPPORT_ENFORCER_COLOR;
 
     enum EHoverState : unsigned char
     {
@@ -377,6 +395,18 @@ private:
     bool m_show_non_manifold_edges{ true };
     bool m_use_raycasters{ true };
 
+    struct MMPaintCachePerVolume {
+        size_t extruder_id;
+        std::unique_ptr<GUI::TriangleSelectorMmGui> triangle_selector_mm;
+        std::chrono::system_clock::time_point time_used;
+        uint64_t mm_timestamp;
+    };
+    struct MMPaintCache {
+        std::vector<ColorRGBA> extruders_colors;
+        std::map<ObjectID, MMPaintCachePerVolume> volume_data;
+    };
+    mutable MMPaintCache m_mm_paint_cache;
+
 public:
     GLVolumePtrs volumes;
 
@@ -394,13 +424,13 @@ public:
         int                volume_idx,
         int                instance_idx);
 
-#if ENABLE_OPENGL_ES
+#if SLIC3R_OPENGL_ES
     int load_wipe_tower_preview(
         float pos_x, float pos_y, float width, float depth, const std::vector<std::pair<float, float>>& z_and_depth_pairs, float height, float cone_angle, float rotation_angle, bool size_unknown, float brim_width, TriangleMesh* out_mesh = nullptr);
 #else
     int load_wipe_tower_preview(
         float pos_x, float pos_y, float width, float depth, const std::vector<std::pair<float, float>>& z_and_depth_pairs, float height, float cone_angle, float rotation_angle, bool size_unknown, float brim_width);
-#endif // ENABLE_OPENGL_ES
+#endif // SLIC3R_OPENGL_ES
 
     // Load SLA auxiliary GLVolumes (for support trees or pad).
     void load_object_auxiliary(

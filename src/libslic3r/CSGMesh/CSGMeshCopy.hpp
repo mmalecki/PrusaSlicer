@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2023 Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef CSGMESHCOPY_HPP
 #define CSGMESHCOPY_HPP
 
@@ -51,6 +55,8 @@ void copy_csgrange_deep(const Range<It> &csgrange, OutIt out)
     }
 }
 
+// Compare two csgmeshes. They are the same if all the triangle mesh pointers are equal and contain
+// the same operations and transformed similarly.
 template<class ItA, class ItB>
 bool is_same(const Range<ItA> &A, const Range<ItB> &B)
 {

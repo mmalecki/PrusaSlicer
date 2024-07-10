@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Enrico Turri @enricoturri1966, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_3DBed_hpp_
 #define slic3r_3DBed_hpp_
 
@@ -37,8 +41,6 @@ private:
     BoundingBoxf3 m_extended_bounding_box;
     // Print bed polygon
     ExPolygon m_contour;
-    // Slightly expanded print bed polygon, for collision detection.
-    Polygon m_polygon;
     GLModel m_triangles;
     GLModel m_gridlines;
     GLModel m_contourlines;
@@ -71,11 +73,6 @@ public:
 
     // Bounding box around the print bed, axes and model, for rendering.
     const BoundingBoxf3& extended_bounding_box() const { return m_extended_bounding_box; }
-
-    // Check against an expanded 2d bounding box.
-    //FIXME shall one check against the real build volume?
-    bool contains(const Point& point) const;
-    Point point_projection(const Point& point) const;
 
     void render(GLCanvas3D& canvas, const Transform3d& view_matrix, const Transform3d& projection_matrix, bool bottom, float scale_factor, bool show_texture);
     void render_axes();

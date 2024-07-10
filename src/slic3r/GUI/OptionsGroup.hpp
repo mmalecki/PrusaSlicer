@@ -1,3 +1,14 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Oleksandra Iushchenko @YuSanka, Enrico Turri @enricoturri1966, Lukáš Hejl @hejllukas, David Kocík @kocikdav, Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Vojtěch Král @vojtechkral
+///|/
+///|/ ported from lib/Slic3r/GUI/OptionsGroup.pm:
+///|/ Copyright (c) Prusa Research 2016 - 2018 Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2013 Scott Penrose
+///|/ Copyright (c) 2012 Henrik Brix Andersen @henrikbrixandersen
+///|/ Copyright (c) 2011 Richard Goodwin
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_OptionsGroup_hpp_
 #define slic3r_OptionsGroup_hpp_
 
@@ -111,16 +122,19 @@ public:
 	OG_CustomCtrl*  custom_ctrl{ nullptr };
 	int				ctrl_horiz_alignment{ wxALIGN_LEFT};
     column_t		extra_column {nullptr};
-    t_change		m_on_change { nullptr };
+    t_change		on_change { nullptr };
 	// To be called when the field loses focus, to assign a new initial value to the field.
 	// Used by the relative position / rotation / scale manipulation fields of the Object Manipulation UI.
-    t_kill_focus    m_fill_empty_value { nullptr };
-	std::function<DynamicPrintConfig()>	m_get_initial_config{ nullptr };
-	std::function<DynamicPrintConfig()>	m_get_sys_config{ nullptr };
-	std::function<bool()>	have_sys_config{ nullptr };
+    t_kill_focus    fill_empty_value { nullptr };
+
+	std::function<DynamicPrintConfig()> get_initial_config{ nullptr };
+	std::function<DynamicPrintConfig()> get_sys_config    { nullptr };
+	std::function<bool()>	            have_sys_config   { nullptr };
 
     std::function<void(wxWindow* win)> rescale_extra_column_item { nullptr };
     std::function<void(wxWindow* win)> rescale_near_label_widget { nullptr };
+
+    std::function<void(const t_config_option_key& opt_key)> edit_custom_gcode { nullptr };
     
     wxFont			sidetext_font {wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT) };
     wxFont			label_font {wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT) };
@@ -193,6 +207,7 @@ public:
 
     wxGridSizer*        get_grid_sizer() { return m_grid_sizer; }
 	const std::vector<Line>& get_lines() { return m_lines; }
+	Line*				get_last_line()  { return m_lines.empty() ? nullptr : &m_lines[m_lines.size()-1]; }
 	bool				is_legend_line();
 	// if we have to set the same control alignment for different option groups, 
     // we have to set same max contrtol width to all of them
@@ -245,6 +260,9 @@ public:
 	static wxString		get_url(const std::string& path_end);
 	static bool			launch_browser(const std::string& path_end);
 	static bool			is_option_without_field(const std::string& opt_key);
+
+	// Change option value in config
+	static void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt_key, const boost::any& value, int opt_index = 0);
 };
 
 class ConfigOptionsGroup: public OptionsGroup {

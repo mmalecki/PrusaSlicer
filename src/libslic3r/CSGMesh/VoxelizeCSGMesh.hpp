@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2022 - 2023 Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef VOXELIZECSGMESH_HPP
 #define VOXELIZECSGMESH_HPP
 
@@ -54,6 +58,7 @@ inline void perform_csg(CSGType op, VoxelGridPtr &dst, VoxelGridPtr &src)
 
 } // namespace detail
 
+// Convert the input csgrange to a voxel grid performing the boolean operations in the voxel realm.
 template<class It>
 VoxelGridPtr voxelize_csgmesh(const Range<It>      &csgrange,
                               const VoxelizeParams &params = {})

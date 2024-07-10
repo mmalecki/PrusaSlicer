@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2018 - 2023 Lukáš Matěna @lukasmatena, Tomáš Mészáros @tamasmeszaros, Vojtěch Bubník @bubnikv, Oleksandra Iushchenko @YuSanka, Enrico Turri @enricoturri1966
+///|/ Copyright (c) 2022 ole00 @ole00
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_SLAPrint_hpp_
 #define slic3r_SLAPrint_hpp_
 
@@ -401,13 +406,15 @@ struct SLAPrintStatistics
 {
     SLAPrintStatistics() { clear(); }
     double                          estimated_print_time;
+    double                          estimated_print_time_tolerance;
     double                          objects_used_material;
     double                          support_used_material;
     size_t                          slow_layers_count;
     size_t                          fast_layers_count;
     double                          total_cost;
     double                          total_weight;
-    std::vector<double>             layers_times;
+    std::vector<double>             layers_times_running_total;
+    std::vector<double>             layers_areas;
 
     // Config with the filled in print statistics.
     DynamicConfig           config() const;
@@ -418,13 +425,15 @@ struct SLAPrintStatistics
 
     void clear() {
         estimated_print_time = 0.;
+        estimated_print_time_tolerance = 0.;
         objects_used_material = 0.;
         support_used_material = 0.;
         slow_layers_count = 0;
         fast_layers_count = 0;
         total_cost = 0.;
         total_weight = 0.;
-        layers_times.clear();
+        layers_times_running_total.clear();
+        layers_areas.clear();
     }
 };
 

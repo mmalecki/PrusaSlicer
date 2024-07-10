@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2023 Oleksandra Iushchenko @YuSanka, David Kocík @kocikdav
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "DownloaderFileGet.hpp"
 
 #include <thread>
@@ -134,7 +138,7 @@ void FileGet::priv::get_perform()
 	if (m_written == 0)
 	{
 		boost::filesystem::path dest_path = m_dest_folder / m_filename;
-		std::string extension = boost::filesystem::extension(dest_path);
+		std::string extension = dest_path.extension().string();
 		std::string just_filename = m_filename.substr(0, m_filename.size() - extension.size());
 		std::string final_filename = just_filename;
         // Find unsed filename 
@@ -166,7 +170,7 @@ void FileGet::priv::get_perform()
 		m_tmp_path = m_dest_folder / (m_filename + "." + std::to_string(get_current_pid()) + ".download");
 
 		wxCommandEvent* evt = new wxCommandEvent(EVT_DWNLDR_FILE_NAME_CHANGE);
-		evt->SetString(boost::nowide::widen(m_filename));
+		evt->SetString(from_u8(m_filename));
 		evt->SetInt(m_id);
 		m_evt_handler->QueueEvent(evt);
 	}

@@ -1,3 +1,8 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Oleksandra Iushchenko @YuSanka, Enrico Turri @enricoturri1966, Lukáš Matěna @lukasmatena, David Kocík @kocikdav, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas
+///|/ Copyright (c) 2019 John Drake @foxox
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "libslic3r/libslic3r.h"
 #include "GLGizmosManager.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
@@ -22,6 +27,7 @@
 #include "slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoSimplify.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoEmboss.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoSVG.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoMeasure.hpp"
 
 #include "libslic3r/format.hpp"
@@ -33,7 +39,7 @@
 namespace Slic3r {
 namespace GUI {
 
-const float GLGizmosManager::Default_Icons_Size = 64;
+const float GLGizmosManager::Default_Icons_Size = 52;// 64;
 
 GLGizmosManager::GLGizmosManager(GLCanvas3D& parent)
     : m_parent(parent)
@@ -65,11 +71,12 @@ GLGizmosManager::EType GLGizmosManager::get_gizmo_from_mouse(const Vec2d &mouse_
     float icons_size = m_layout.scaled_icons_size();
     float border     = m_layout.scaled_border();
     float stride_y   = m_layout.scaled_stride_y();
+    float gap_x      = m_layout.scaled_gap_x();
     float top_y      = 0.5f * (cnv_h - height) + border;
 
     // is mouse horizontally in the area?
-    if ((border <= (float) mouse_pos(0) &&
-         ((float) mouse_pos(0) <= border + icons_size))) {
+    if (border <= (float) mouse_pos(0) &&
+         (float) mouse_pos(0) <= (border+gap_x + icons_size)) {
         // which icon is it on?
         size_t from_top = (size_t) ((float) mouse_pos(1) - top_y) / stride_y;
         // is it really on the icon or already past the border?
@@ -109,6 +116,7 @@ bool GLGizmosManager::init()
     m_gizmos.emplace_back(new GLGizmoMmuSegmentation(m_parent, "mmu_segmentation.svg", 9));
     m_gizmos.emplace_back(new GLGizmoMeasure(m_parent, "measure.svg", 10));
     m_gizmos.emplace_back(new GLGizmoEmboss(m_parent));
+    m_gizmos.emplace_back(new GLGizmoSVG(m_parent));
     m_gizmos.emplace_back(new GLGizmoSimplify(m_parent));
 
     m_common_gizmos_data.reset(new CommonGizmosDataPool(&m_parent));
@@ -173,8 +181,7 @@ void GLGizmosManager::reset_all_states()
     const EType current = get_current_type();
     if (current != Undefined)
         // close any open gizmo
-        if (!open_gizmo(current))
-            return;
+        open_gizmo(current);
 
     activate_gizmo(Undefined);
     m_hover = Undefined;
@@ -802,7 +809,9 @@ void GLGizmosManager::do_render_overlay() const
 
     render_background(top_x, top_y, top_x + width, top_y - height, border_w, border_h);
 
-    top_x += border_w;
+    const float margin_w = border_w + m_layout.scaled_gap_x() * inv_cnv_w;
+
+    top_x += margin_w;
     top_y -= border_h;
 
     const float icons_size_x = 2.0f * m_layout.scaled_icons_size() * inv_cnv_w;
@@ -826,9 +835,13 @@ void GLGizmosManager::do_render_overlay() const
     float current_y = FLT_MAX;
     for (size_t idx : selectable_idxs) {
         GLGizmoBase* gizmo = m_gizmos[idx].get();
+
+        if (m_current == idx)
+            render_background(top_x - margin_w, top_y + border_h, top_x + icons_size_x + margin_w, top_y - icons_size_y - border_h, border_w, border_h);
+
         const unsigned int sprite_id = gizmo->get_sprite_id();
         // higlighted state needs to be decided first so its highlighting in every other state
-        const int icon_idx = (m_highlight.first == idx ? (m_highlight.second ? 4 : 5) : (m_current == idx) ? 2 : ((m_hover == idx) ? 1 : (gizmo->is_activable() ? 0 : 3)));
+        const int icon_idx = (m_highlight.first == idx ? (m_highlight.second ? 4 : 5) : (m_current == idx) ? /*2*/1 : ((m_hover == idx) ? 1 : (gizmo->is_activable() ? 0 : 3)));
 
         const float u_left   = u_offset + icon_idx * du;
         const float u_right  = u_left + du - u_offset;
@@ -850,12 +863,12 @@ void GLGizmosManager::do_render_overlay() const
 
 float GLGizmosManager::get_scaled_total_height() const
 {
-    return m_layout.scale * (2.0f * m_layout.border + (float)get_selectable_idxs().size() * m_layout.stride_y() - m_layout.gap_y);
+    return 2.0f * m_layout.scaled_border() + (float)get_selectable_idxs().size() * m_layout.scaled_stride_y() - m_layout.scaled_gap_y();
 }
 
 float GLGizmosManager::get_scaled_total_width() const
 {
-    return 2.0f * m_layout.scaled_border() + m_layout.scaled_icons_size();
+    return 2.0f * m_layout.scaled_border() + m_layout.scaled_icons_size() + m_layout.scaled_gap_x();
 }
 
 GLGizmoBase* GLGizmosManager::get_current() const

@@ -1,3 +1,18 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Tomáš Mészáros @tamasmeszaros, Lukáš Matěna @lukasmatena, Filip Sykala @Jony01, Lukáš Hejl @hejllukas
+///|/ Copyright (c) 2017 Eyal Soha @eyal0
+///|/ Copyright (c) Slic3r 2013 - 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ ported from lib/Slic3r/Geometry.pm:
+///|/ Copyright (c) Prusa Research 2017 - 2022 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2013 Jose Luis Perez Diez
+///|/ Copyright (c) 2013 Anders Sundman
+///|/ Copyright (c) 2013 Jesse Vincent
+///|/ Copyright (c) 2012 Mike Sheldrake @mesheldrake
+///|/ Copyright (c) 2012 Mark Hindess
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_Geometry_hpp_
 #define slic3r_Geometry_hpp_
 
@@ -10,9 +25,7 @@
 // Serialization through the Cereal library
 #include <cereal/access.hpp>
 
-namespace Slic3r { 
-
-namespace Geometry {
+namespace Slic3r::Geometry {
 
 // Generic result of an orientation predicate.
 enum Orientation
@@ -301,6 +314,13 @@ template<typename T> T angle_to_0_2PI(T angle)
 
     return angle;
 }
+template<typename T> void to_range_pi_pi(T &angle){
+    if (angle > T(PI) || angle <= -T(PI)) {
+        int count = static_cast<int>(std::round(angle / (2 * PI)));
+        angle -= static_cast<T>(count * 2 * PI);
+        assert(angle <= T(PI) && angle > -T(PI));
+    }
+}
 
 void simplify_polygons(const Polygons &polygons, double tolerance, Polygons* retval);
 
@@ -438,6 +458,8 @@ public:
     Transform3d get_matrix_no_offset() const;
     Transform3d get_matrix_no_scaling_factor() const;
 
+    Transform3d get_matrix_with_applied_shrinkage_compensation(const Vec3d &shrinkage_compensation) const;
+
     void set_matrix(const Transform3d& transform) { m_matrix = transform; }
 
     Transformation operator * (const Transformation& other) const;
@@ -529,6 +551,22 @@ Vec<3, T> spheric_to_dir(const Pair &v)
     return spheric_to_dir<T>(plr, azm);
 }
 
-} } // namespace Slicer::Geometry
+/**
+ * Checks if a given point is inside a corner of a polygon.
+ *
+ * The corner of a polygon is defined by three points A, B, C in counterclockwise order.
+ *
+ * Adapted from CuraEngine LinearAlg2D::isInsideCorner by Tim Kuipers @BagelOrb
+ * and @Ghostkeeper.
+ *
+ * @param a The first point of the corner.
+ * @param b The second point of the corner (the common vertex of the two edges forming the corner).
+ * @param c The third point of the corner.
+ * @param query_point The point to be checked if is inside the corner.
+ * @return True if the query point is inside the corner, false otherwise.
+ */
+bool is_point_inside_polygon_corner(const Point &a, const Point &b, const Point &c, const Point &query_point);
+
+} // namespace Slic3r::Geometry
 
 #endif

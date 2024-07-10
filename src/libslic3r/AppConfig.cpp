@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2017 - 2023 Oleksandra Iushchenko @YuSanka, Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, Vojtěch Král @vojtechkral
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Utils.hpp"
 #include "AppConfig.hpp"
@@ -12,7 +16,6 @@
 
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
-#include <boost/nowide/cenv.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 #include <boost/property_tree/ptree_fwd.hpp>
@@ -98,18 +101,13 @@ void AppConfig::set_defaults()
         if (get("associate_stl").empty())
             set("associate_stl", "0");
 
-        if (get("tabs_as_menu").empty())
-            set("tabs_as_menu", "0");
+        if (get("suppress_round_corners").empty())
+            set("suppress_round_corners", "1");
 #endif // _WIN32
 
         // remove old 'use_legacy_opengl' parameter from this config, if present
         if (!get("use_legacy_opengl").empty())
             erase("", "use_legacy_opengl");
-
-#ifdef __APPLE__
-        if (get("use_retina_opengl").empty())
-            set("use_retina_opengl", "1");
-#endif
 
         if (get("single_instance").empty())
             set("single_instance", 
@@ -134,6 +132,9 @@ void AppConfig::set_defaults()
 
         if (get("auto_toolbar_size").empty())
             set("auto_toolbar_size", "100");
+
+        if (get("use_binary_gcode_when_supported").empty())
+            set("use_binary_gcode_when_supported", "1");
  
        if (get("notify_release").empty())
            set("notify_release", "all"); // or "none" or "release"
@@ -171,8 +172,15 @@ void AppConfig::set_defaults()
 #ifdef _WIN32
         if (get("associate_gcode").empty())
             set("associate_gcode", "0");
+        if (get("associate_bgcode").empty())
+            set("associate_bgcode", "0");
 #endif // _WIN32
     }
+
+#ifdef __APPLE__
+    if (get("use_retina_opengl").empty())
+        set("use_retina_opengl", "1");
+#endif // __APPLE__
 
     if (get("seq_top_layer_only").empty())
         set("seq_top_layer_only", "1");
@@ -200,6 +208,24 @@ void AppConfig::set_defaults()
 
     if (get("allow_ip_resolve").empty())
         set("allow_ip_resolve", "1");
+
+    if (get("wifi_config_dialog_declined").empty())
+        set("wifi_config_dialog_declined", "0");
+
+    if (get("connect_polling").empty())
+        set("connect_polling", "1");
+
+    if (get("auth_login_dialog_confirmed").empty())
+        set("auth_login_dialog_confirmed", "0");
+
+    if (get("show_estimated_times_in_dbl_slider").empty())
+        set("show_estimated_times_in_dbl_slider", "1");
+
+    if (get("show_ruler_in_dbl_slider").empty())
+        set("show_ruler_in_dbl_slider", "0");
+
+    if (get("show_ruler_bg_in_dbl_slider").empty())
+        set("show_ruler_bg_in_dbl_slider", "1");
 
 #ifdef _WIN32
     if (get("use_legacy_3DConnexion").empty())
@@ -674,25 +700,7 @@ bool AppConfig::update_skein_dir(const std::string &dir)
         return false; // do not save "shapes gallery" directory
     return this->set("recent", "skein_directory", dir);
 }
-/*
-std::string AppConfig::get_last_output_dir(const std::string &alt) const
-{
-	
-    const auto it = m_storage.find("");
-    if (it != m_storage.end()) {
-        const auto it2 = it->second.find("last_output_path");
-        const auto it3 = it->second.find("remember_output_path");
-        if (it2 != it->second.end() && it3 != it->second.end() && ! it2->second.empty() && it3->second == "1")
-            return it2->second;
-    }
-    return alt;
-}
 
-void AppConfig::update_last_output_dir(const std::string &dir)
-{
-    this->set("", "last_output_path", dir);
-}
-*/
 std::string AppConfig::get_last_output_dir(const std::string& alt, const bool removable) const
 {
 	std::string s1 = (removable ? "last_output_path_removable" : "last_output_path");

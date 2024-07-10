@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2023 Pavel Mikuš @Godrak, Lukáš Hejl @hejllukas
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillEnsuring_hpp_
 #define slic3r_FillEnsuring_hpp_
 
@@ -19,6 +23,7 @@ public:
     {
         return make_fill_polylines(this, surface, params, true, true, true);
     };
+    bool is_self_crossing() override { return false; }
 
 protected:
     void fill_surface_single_arachne(const Surface &surface, const FillParams &params, ThickPolylines &thick_polylines_out);

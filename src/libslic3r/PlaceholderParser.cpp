@@ -1,3 +1,11 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Lukáš Hejl @hejllukas, Vojtěch Král @vojtechkral
+///|/ Copyright (c) 2020 Paul Arden @ardenpm
+///|/ Copyright (c) 2019 Matthias Urlichs @smurfix
+///|/ Copyright (c) 2018 Francesco Santini @fsantini
+///|/ Copyright (c) Slic3r 2014 - 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "PlaceholderParser.hpp"
 #include "Exception.hpp"
 #include "Flow.hpp"
@@ -1090,6 +1098,7 @@ namespace client
 
         static void scalar_variable_assign_scalar(const MyContext *ctx, OptWithPos &lhs, const expr &rhs)
         {
+            assert(! ctx->skipping());
             assert(lhs.opt->is_scalar());
             check_writable(ctx, lhs);
             ConfigOption *wropt = const_cast<ConfigOption*>(lhs.opt);
@@ -1121,6 +1130,7 @@ namespace client
 
         static void vector_variable_element_assign_scalar(const MyContext *ctx, OptWithPos &lhs, const expr &rhs)
         {
+            assert(! ctx->skipping());
             assert(lhs.opt->is_vector());
             check_writable(ctx, lhs);
             if (! lhs.has_index())
@@ -1158,6 +1168,7 @@ namespace client
 
         static void vector_variable_assign_expr_with_count(const MyContext *ctx, OptWithPos &lhs, const expr &rhs_count, const expr &rhs_value)
         {
+            assert(! ctx->skipping());
             size_t count = evaluate_count(rhs_count);
             auto *opt = const_cast<ConfigOption*>(lhs.opt);
             switch (lhs.opt->type()) {
@@ -1640,6 +1651,7 @@ namespace client
 
             // Check whether the table X values are sorted.
             double x = expr_x.as_d();
+            assert(! std::isnan(x));
             bool   evaluated = false;
             for (size_t i = 1; i < table.table.size(); ++i) {
                 double x0 = table.table[i - 1].x;
@@ -2095,7 +2107,7 @@ namespace client
             multiplicative_expression.name("multiplicative_expression");
 
             assignment_statement =
-                variable_reference(_r1)[_a = _1] >> '=' > 
+                (variable_reference(_r1)[_a = _1] >> '=') > 
                 (       // Consumes also '(' conditional_expression ')', that means enclosing an expression into braces makes it a single value vector initializer.
                          initializer_list(_r1)[px::bind(&MyContext::vector_variable_assign_initializer_list, _r1, _a, _1)]
                         // Process it before conditional_expression, as conditional_expression requires a vector reference to be augmented with an index.

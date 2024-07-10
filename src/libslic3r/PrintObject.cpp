@@ -1,9 +1,20 @@
+///|/ Copyright (c) Prusa Research 2016 - 2023 Lukáš Hejl @hejllukas, Pavel Mikuš @Godrak, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka, David Kocík @kocikdav, Roman Beránek @zavorka
+///|/ Copyright (c) 2021 Justin Schuh @jschuh
+///|/ Copyright (c) 2021 Ilya @xorza
+///|/ Copyright (c) 2016 Joseph Lenox @lordofhyphens
+///|/ Copyright (c) Slic3r 2014 - 2016 Alessandro Ranellucci @alranel
+///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "AABBTreeLines.hpp"
 #include "BridgeDetector.hpp"
 #include "ExPolygon.hpp"
 #include "Exception.hpp"
 #include "Flow.hpp"
+#include "GCode/ExtrusionProcessor.hpp"
 #include "KDTreeIndirect.hpp"
+#include "Line.hpp"
 #include "Point.hpp"
 #include "Polygon.hpp"
 #include "Polyline.hpp"
@@ -533,6 +544,65 @@ void PrintObject::estimate_curled_extrusions()
     }
 }
 
+void PrintObject::calculate_overhanging_perimeters()
+{
+    if (this->set_started(posCalculateOverhangingPerimeters)) {
+        BOOST_LOG_TRIVIAL(debug) << "Calculating overhanging perimeters - start";
+        m_print->set_status(89, _u8L("Calculating overhanging perimeters"));
+        std::vector<unsigned int>               extruders;
+        std::unordered_set<const PrintRegion *> regions_with_dynamic_speeds;
+        for (const PrintRegion *pr : this->print()->m_print_regions) {
+            if (pr->config().enable_dynamic_overhang_speeds.getBool()) {
+                regions_with_dynamic_speeds.insert(pr);
+            }
+            extruders.clear();
+            pr->collect_object_printing_extruders(*this->print(), extruders);
+            auto cfg = this->print()->config();
+            if (std::any_of(extruders.begin(), extruders.end(),
+                            [&cfg](unsigned int extruder_id) { return cfg.enable_dynamic_fan_speeds.get_at(extruder_id); })) {
+                regions_with_dynamic_speeds.insert(pr);
+            }
+        }
+
+        if (!regions_with_dynamic_speeds.empty()) {
+            std::unordered_map<size_t, AABBTreeLines::LinesDistancer<CurledLine>> curled_lines;
+            std::unordered_map<size_t, AABBTreeLines::LinesDistancer<Linef>>      unscaled_polygons_lines;
+            for (const Layer *l : this->layers()) {
+                curled_lines[l->id()]            = AABBTreeLines::LinesDistancer<CurledLine>{l->curled_lines};
+                unscaled_polygons_lines[l->id()] = AABBTreeLines::LinesDistancer<Linef>{to_unscaled_linesf(l->lslices)};
+            }
+            curled_lines[size_t(-1)]            = {};
+            unscaled_polygons_lines[size_t(-1)] = {};
+
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()), [this, &curled_lines, &unscaled_polygons_lines,
+                                                                               &regions_with_dynamic_speeds](
+                                                                                  const tbb::blocked_range<size_t> &range) {
+                PRINT_OBJECT_TIME_LIMIT_MILLIS(PRINT_OBJECT_TIME_LIMIT_DEFAULT);
+                for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+                    auto l = m_layers[layer_idx];
+                    if (l->id() == 0) { // first layer, do not split
+                        continue;
+                    }
+                    for (LayerRegion *layer_region : l->regions()) {
+                        if (regions_with_dynamic_speeds.find(layer_region->m_region) == regions_with_dynamic_speeds.end()) {
+                            continue;
+                        }
+                        size_t prev_layer_id = l->lower_layer ? l->lower_layer->id() : size_t(-1);
+                        layer_region->m_perimeters =
+                            ExtrusionProcessor::calculate_and_split_overhanging_extrusions(&layer_region->m_perimeters,
+                                                                                           unscaled_polygons_lines[prev_layer_id],
+                                                                                           curled_lines[l->id()]);
+                    }
+                }
+            });
+
+            m_print->throw_if_canceled();
+            BOOST_LOG_TRIVIAL(debug) << "Calculating overhanging perimeters - end";
+        }
+        this->set_done(posCalculateOverhangingPerimeters);
+    }
+}
+
 std::pair<FillAdaptive::OctreePtr, FillAdaptive::OctreePtr> PrintObject::prepare_adaptive_infill_data(
     const std::vector<std::pair<const Surface *, float>> &surfaces_w_bottom_z) const
 {
@@ -644,7 +714,10 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "first_layer_extrusion_width"
             || opt_key == "perimeter_extrusion_width"
             || opt_key == "infill_overlap"
-            || opt_key == "external_perimeters_first") {
+            || opt_key == "external_perimeters_first"
+            || opt_key == "arc_fitting"
+            || opt_key == "top_one_perimeter_type"
+            || opt_key == "only_one_perimeter_first_layer") {
             steps.emplace_back(posPerimeters);
         } else if (
                opt_key == "gap_fill_enabled"
@@ -670,6 +743,7 @@ bool PrintObject::invalidate_state_by_config_options(
         } else if (
                opt_key == "layer_height"
             || opt_key == "mmu_segmented_region_max_width"
+            || opt_key == "mmu_segmented_region_interlocking_depth"
             || opt_key == "raft_layers"
             || opt_key == "raft_contact_distance"
             || opt_key == "slice_closing_radius"
@@ -814,15 +888,15 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "overhang_speed_2"
             || opt_key == "overhang_speed_3"
             || opt_key == "external_perimeter_speed"
-            || opt_key == "infill_speed"
-            || opt_key == "perimeter_speed"
             || opt_key == "small_perimeter_speed"
             || opt_key == "solid_infill_speed"
             || opt_key == "top_solid_infill_speed") {
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else if (
                opt_key == "wipe_into_infill"
-            || opt_key == "wipe_into_objects") {
+            || opt_key == "wipe_into_objects"
+            || opt_key == "infill_speed"
+            || opt_key == "perimeter_speed") {
             invalidated |= m_print->invalidate_step(psWipeTower);
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else {
@@ -844,7 +918,7 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
     
     // propagate to dependent steps
     if (step == posPerimeters) {
-		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill, posIroning,  posSupportSpotsSearch, posEstimateCurledExtrusions });
+		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill, posIroning,  posSupportSpotsSearch, posEstimateCurledExtrusions, posCalculateOverhangingPerimeters });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posPrepareInfill) {
         invalidated |= this->invalidate_steps({ posInfill, posIroning, posSupportSpotsSearch});
@@ -853,7 +927,7 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posSlice) {
         invalidated |= this->invalidate_steps({posPerimeters, posPrepareInfill, posInfill, posIroning, posSupportSpotsSearch,
-                                               posSupportMaterial, posEstimateCurledExtrusions});
+                                               posSupportMaterial, posEstimateCurledExtrusions, posCalculateOverhangingPerimeters});
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
         m_slicing_params.valid = false;
     } else if (step == posSupportMaterial) {
@@ -1539,21 +1613,33 @@ void PrintObject::discover_vertical_shells()
                             // Finally expand the infill a bit to remove tiny gaps between solid infill and the other regions.
                             narrow_sparse_infill_region_radius - tiny_overlap_radius, ClipperLib::jtSquare);
 
+                        Polygons object_volume;
                         Polygons internal_volume;
                         {
                             Polygons shrinked_bottom_slice = idx_layer > 0 ? to_polygons(m_layers[idx_layer - 1]->lslices) : Polygons{};
                             Polygons shrinked_upper_slice  = (idx_layer + 1) < m_layers.size() ?
                                                                  to_polygons(m_layers[idx_layer + 1]->lslices) :
                                                                  Polygons{};
-                            internal_volume                = intersection(shrinked_bottom_slice, shrinked_upper_slice);
+                            object_volume = intersection(shrinked_bottom_slice, shrinked_upper_slice);
+                            internal_volume = closing(polygonsInternal, float(SCALED_EPSILON));
                         }
 
-                        // The opening operation may cause scattered tiny drops on the smooth parts of the model, filter them out
+                        // The regularization operation may cause scattered tiny drops on the smooth parts of the model, filter them out
+                        // If the region checks both following conditions, it is removed:
+                        //   1. the area is very small,
+                        //      OR the area is quite small and it is fully wrapped in model (not visible)
+                        //      the in-model condition is there due to small sloping surfaces, e.g. top of the hull of the benchy
+                        //   2. the area does not fully cover an internal polygon
+                        //         This is there mainly for a very thin parts, where the solid layers would be missing if the part area is quite small
                         regularized_shell.erase(std::remove_if(regularized_shell.begin(), regularized_shell.end(),
-                                                               [&min_perimeter_infill_spacing, &internal_volume](const ExPolygon &p) {
-                                                                   return p.area() < min_perimeter_infill_spacing * scaled(1.5) ||
-                                                                          (p.area() < min_perimeter_infill_spacing * scaled(8.0) &&
-                                                                           diff(to_polygons(p), internal_volume).empty());
+                                                               [&internal_volume, &min_perimeter_infill_spacing,
+                                                                &object_volume](const ExPolygon &p) {
+                                                                   return (p.area() < min_perimeter_infill_spacing * scaled(1.5) ||
+                                                                           (p.area() < min_perimeter_infill_spacing * scaled(8.0) &&
+                                                                            diff(to_polygons(p), object_volume).empty())) &&
+                                                                          diff(internal_volume,
+                                                                               expand(to_polygons(p), min_perimeter_infill_spacing))
+                                                                                  .size() >= internal_volume.size();
                                                                }),
                                                 regularized_shell.end());
                     }
@@ -2534,15 +2620,14 @@ PrintRegionConfig region_config_from_model_volume(const PrintRegionConfig &defau
     return config;
 }
 
-void PrintObject::update_slicing_parameters()
-{
-    if (!m_slicing_params.valid)
-        m_slicing_params = SlicingParameters::create_from_config(
-            this->print()->config(), m_config, this->model_object()->max_z(), this->object_extruders());
+void PrintObject::update_slicing_parameters() {
+    if (!m_slicing_params.valid) {
+        m_slicing_params = SlicingParameters::create_from_config(this->print()->config(), m_config, this->model_object()->max_z(),
+                                                                 this->object_extruders(), this->print()->shrinkage_compensation());
+    }
 }
 
-SlicingParameters PrintObject::slicing_parameters(const DynamicPrintConfig& full_config, const ModelObject& model_object, float object_max_z)
-{
+SlicingParameters PrintObject::slicing_parameters(const DynamicPrintConfig &full_config, const ModelObject &model_object, float object_max_z, const Vec3d &object_shrinkage_compensation) {
 	PrintConfig         print_config;
 	PrintObjectConfig   object_config;
 	PrintRegionConfig   default_region_config;
@@ -2575,7 +2660,8 @@ SlicingParameters PrintObject::slicing_parameters(const DynamicPrintConfig& full
 
     if (object_max_z <= 0.f)
         object_max_z = (float)model_object.raw_bounding_box().size().z();
-    return SlicingParameters::create_from_config(print_config, object_config, object_max_z, object_extruders);
+
+    return SlicingParameters::create_from_config(print_config, object_config, object_max_z, object_extruders, object_shrinkage_compensation);
 }
 
 // returns 0-based indices of extruders used to print the object (without brim, support and other helper extrusions)
@@ -2596,7 +2682,6 @@ bool PrintObject::update_layer_height_profile(const ModelObject &model_object, c
     if (layer_height_profile.empty()) {
         // use the constructor because the assignement is crashing on ASAN OsX
         layer_height_profile = model_object.layer_height_profile.get();
-//        layer_height_profile = model_object.layer_height_profile;
         // The layer height returned is sampled with high density for the UI layer height painting
         // and smoothing tool to work.
         updated = true;
@@ -2607,8 +2692,9 @@ bool PrintObject::update_layer_height_profile(const ModelObject &model_object, c
         // Must not be of even length.
         ((layer_height_profile.size() & 1) != 0 ||
             // Last entry must be at the top of the object.
-            std::abs(layer_height_profile[layer_height_profile.size() - 2] - slicing_parameters.object_print_z_max + slicing_parameters.object_print_z_min) > 1e-3))
+            std::abs(layer_height_profile[layer_height_profile.size() - 2] - slicing_parameters.object_print_z_uncompensated_max + slicing_parameters.object_print_z_min) > 1e-3)) {
         layer_height_profile.clear();
+    }
 
     if (layer_height_profile.empty()) {
         //layer_height_profile = layer_height_profile_adaptive(slicing_parameters, model_object.layer_config_ranges, model_object.volumes);
@@ -3064,7 +3150,7 @@ static void project_triangles_to_slabs(SpanOfConstPtrs<Layer> layers, const inde
 }
 
 void PrintObject::project_and_append_custom_facets(
-        bool seam, EnforcerBlockerType type, std::vector<Polygons>& out) const
+        bool seam, TriangleStateType type, std::vector<Polygons>& out) const
 {
     for (const ModelVolume* mv : this->model_object()->volumes)
         if (mv->is_model_part()) {

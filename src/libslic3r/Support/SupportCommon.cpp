@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2023 Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "../ClipperUtils.hpp"
 #include "../ClipperZUtils.hpp"
 #include "../ExtrusionEntityCollection.hpp"
@@ -485,8 +489,7 @@ static inline void fill_expolygon_generate_paths(
     extrusion_entities_append_paths(
         dst,
         std::move(polylines),
-        role,
-        flow.mm3_per_mm(), flow.width(), flow.height());
+        { role, flow });
 }
 
 static inline void fill_expolygons_generate_paths(
@@ -516,18 +519,19 @@ static inline void fill_expolygons_generate_paths(
     fill_expolygons_generate_paths(dst, std::move(expolygons), filler, fill_params, density, role, flow);
 }
 
-static Polylines draw_perimeters(const ExPolygon &expoly, double clip_length)
-{
+static Polylines draw_perimeters(const ExPolygon &expoly, double clip_length, const bool prefer_clockwise_movements) {
     // Draw the perimeters.
     Polylines polylines;
     polylines.reserve(expoly.holes.size() + 1);
     for (size_t i = 0; i <= expoly.holes.size();  ++ i) {
         Polyline pl(i == 0 ? expoly.contour.points : expoly.holes[i - 1].points);
         pl.points.emplace_back(pl.points.front());
-        if (i > 0)
-            // It is a hole, reverse it.
+
+        // When prefer_clockwise_movements is true ensure that all loops are CW oriented (reverse contour),
+        // otherwise ensure that all loops are CCW oriented (reverse loops).
+        if (const bool loop_reverse = prefer_clockwise_movements ? i == 0 : i > 0; loop_reverse)
             pl.reverse();
-        // so that all contours are CCW oriented.
+
         pl.clip_end(clip_length);
         polylines.emplace_back(std::move(pl));
     }
@@ -644,7 +648,7 @@ static inline void tree_supports_generate_paths(
                 ExPolygons level2 = offset2_ex({ expoly }, -1.5 * flow.scaled_width(), 0.5 * flow.scaled_width());
                 if (level2.size() == 1) {
                     Polylines polylines;
-                    extrusion_entities_append_paths(eec->entities, draw_perimeters(expoly, clip_length), ExtrusionRole::SupportMaterial, flow.mm3_per_mm(), flow.width(), flow.height(),
+                    extrusion_entities_append_paths(eec->entities, draw_perimeters(expoly, clip_length, support_params.prefer_clockwise_movements), { ExtrusionRole::SupportMaterial, flow },
                         // Disable reversal of the path, always start with the anchor, always print CCW.
                         false);
                     expoly = level2.front();
@@ -656,10 +660,14 @@ static inline void tree_supports_generate_paths(
         // The anchor candidate points are annotated with an index of the source contour or with -1 if on intersection.
         anchor_candidates.clear();
         shrink_expolygon_with_contour_idx(expoly, flow.scaled_width(), DefaultJoinType, 1.2, anchor_candidates);
-        // Orient all contours CW.
-        for (auto &path : anchor_candidates)
-            if (ClipperLib_Z::Area(path) > 0)
+
+        // Based on the way how loops with anchors are constructed (we reverse orientation at the end),
+        // orient all loops CCW when prefer_clockwise_movements is true and orient all loops CW otherwise.
+        for (auto &path : anchor_candidates) {
+            const bool is_ccw = ClipperLib_Z::Area(path) > 0;
+            if (const bool path_reverse = support_params.prefer_clockwise_movements ? !is_ccw : is_ccw; path_reverse)
                 std::reverse(path.begin(), path.end());
+        }
 
         // Draw the perimeters.
         Polylines polylines;
@@ -668,10 +676,12 @@ static inline void tree_supports_generate_paths(
             // Open the loop with a seam.
             const Polygon &loop = expoly.contour_or_hole(idx_loop);
             Polyline pl(loop.points);
-            // Orient all contours CW, because the anchor will be added to the end of polyline while we want to start a loop with the anchor.
-            if (idx_loop == 0)
-                // It is an outer contour.
+
+            // When prefer_clockwise_movements is true, orient all loops CCW and orient all loops CW otherwise
+            // because the anchor will be added to the end of the polyline while we want to start a loop with the anchor.
+            if (const bool loop_reverse = support_params.prefer_clockwise_movements ? idx_loop != 0 : idx_loop == 0; loop_reverse)
                 pl.reverse();
+
             pl.points.emplace_back(pl.points.front());
             pl.clip_end(clip_length);
             if (pl.size() < 2)
@@ -750,7 +760,7 @@ static inline void tree_supports_generate_paths(
         }
 
         ExtrusionEntitiesPtr &out = eec ? eec->entities : dst;
-        extrusion_entities_append_paths(out, std::move(polylines), ExtrusionRole::SupportMaterial, flow.mm3_per_mm(), flow.width(), flow.height(), 
+        extrusion_entities_append_paths(out, std::move(polylines), { ExtrusionRole::SupportMaterial, flow },
             // Disable reversal of the path, always start with the anchor, always print CCW.
             false);
         if (eec) {
@@ -764,11 +774,12 @@ static inline void fill_expolygons_with_sheath_generate_paths(
     ExtrusionEntitiesPtr    &dst,
     const Polygons          &polygons,
     Fill                    *filler,
-    float                    density,
-    ExtrusionRole            role,
+    const float              density,
+    const ExtrusionRole      role,
     const Flow              &flow,
-    bool                     with_sheath,
-    bool                     no_sort)
+    const bool               with_sheath,
+    const bool               no_sort,
+    const bool               prefer_clockwise_movements)
 {
     if (polygons.empty())
         return;
@@ -794,7 +805,7 @@ static inline void fill_expolygons_with_sheath_generate_paths(
             eec->no_sort = true;
         }
         ExtrusionEntitiesPtr &out = no_sort ? eec->entities : dst;
-        extrusion_entities_append_paths(out, draw_perimeters(expoly, clip_length), ExtrusionRole::SupportMaterial, flow.mm3_per_mm(), flow.width(), flow.height());
+        extrusion_entities_append_paths(out, draw_perimeters(expoly, clip_length, prefer_clockwise_movements), { ExtrusionRole::SupportMaterial, flow }, false);
         // Fill in the rest.
         fill_expolygons_generate_paths(out, offset_ex(expoly, float(-0.4 * spacing)), filler, fill_params, density, role, flow);
         if (no_sort && ! eec->empty())
@@ -1106,7 +1117,7 @@ void LoopInterfaceProcessor::generate(SupportGeneratorLayerExtruded &top_contact
     extrusion_entities_append_paths(
         top_contact_layer.extrusions,
         std::move(loop_lines),
-        ExtrusionRole::SupportMaterialInterface, flow.mm3_per_mm(), flow.width(), flow.height());
+        { ExtrusionRole::SupportMaterialInterface, flow });
 }
 
 #ifdef SLIC3R_DEBUG
@@ -1148,24 +1159,19 @@ static void modulate_extrusion_by_overlapping_layers(
     ExtrusionPath *extrusion_path_template = dynamic_cast<ExtrusionPath*>(extrusions_in_out.front());
     assert(extrusion_path_template != nullptr);
     ExtrusionRole extrusion_role  = extrusion_path_template->role();
-    float         extrusion_width = extrusion_path_template->width;
+    float         extrusion_width = extrusion_path_template->width();
 
     struct ExtrusionPathFragment
     {
-        ExtrusionPathFragment() : mm3_per_mm(-1), width(-1), height(-1) {};
-        ExtrusionPathFragment(double mm3_per_mm, float width, float height) : mm3_per_mm(mm3_per_mm), width(width), height(height) {};
-
+        ExtrusionFlow   flow;
         Polylines       polylines;
-        double          mm3_per_mm;
-        float           width;
-        float           height;
     };
 
     // Split the extrusions by the overlapping layers, reduce their extrusion rate.
     // The last path_fragment is from this_layer.
     std::vector<ExtrusionPathFragment> path_fragments(
         n_overlapping_layers + 1, 
-        ExtrusionPathFragment(extrusion_path_template->mm3_per_mm, extrusion_path_template->width, extrusion_path_template->height));
+        ExtrusionPathFragment{ extrusion_path_template->attributes() });
     // Don't use it, it will be released.
     extrusion_path_template = nullptr;
 
@@ -1242,8 +1248,8 @@ static void modulate_extrusion_by_overlapping_layers(
         path_fragments.back().polylines = diff_pl(path_fragments.back().polylines, polygons_trimming);
         // Adjust the extrusion parameters for a reduced layer height and a non-bridging flow (nozzle_dmr = -1, does not matter).
         assert(this_layer.print_z > overlapping_layer.print_z);
-        frag.height = float(this_layer.print_z - overlapping_layer.print_z);
-        frag.mm3_per_mm = Flow(frag.width, frag.height, -1.f).mm3_per_mm();
+        frag.flow.height = float(this_layer.print_z - overlapping_layer.print_z);
+        frag.flow.mm3_per_mm = Flow(frag.flow.width, frag.flow.height, -1.f).mm3_per_mm();
 #ifdef SLIC3R_DEBUG
         svg.draw(frag.polylines, dbg_index_to_color(i_overlapping_layer), scale_(0.1));
 #endif /* SLIC3R_DEBUG */
@@ -1326,15 +1332,14 @@ static void modulate_extrusion_by_overlapping_layers(
             ExtrusionPath         *path = multipath.paths.empty() ? nullptr : &multipath.paths.back();
             if (path != nullptr) {
                 // Verify whether the path is compatible with the current fragment.
-                assert(this_layer.layer_type == SupporLayerType::BottomContact || path->height != frag.height || path->mm3_per_mm != frag.mm3_per_mm);
-                if (path->height != frag.height || path->mm3_per_mm != frag.mm3_per_mm) {
+                assert(this_layer.layer_type == SupporLayerType::BottomContact || path->height() != frag.flow.height || path->mm3_per_mm() != frag.flow.mm3_per_mm);
+                if (path->height() != frag.flow.height || path->mm3_per_mm() != frag.flow.mm3_per_mm)
                     path = nullptr;
-                }
                 // Merging with the previous path. This can only happen if the current layer was reduced by a base layer, which was split into a base and interface layer.
             }
             if (path == nullptr) {
                 // Allocate a new path.
-                multipath.paths.push_back(ExtrusionPath(extrusion_role, frag.mm3_per_mm, frag.width, frag.height));
+                multipath.paths.emplace_back(ExtrusionAttributes{ extrusion_role, frag.flow });
                 path = &multipath.paths.back();
             }
             // The Clipper library may flip the order of the clipped polylines arbitrarily.
@@ -1369,8 +1374,8 @@ static void modulate_extrusion_by_overlapping_layers(
     }
     // If there are any non-consumed fragments, add them separately.
     //FIXME this shall not happen, if the Clipper works as expected and all paths split to fragments could be re-connected.
-    for (auto it_fragment = path_fragments.begin(); it_fragment != path_fragments.end(); ++ it_fragment)
-        extrusion_entities_append_paths(extrusions_in_out, std::move(it_fragment->polylines), extrusion_role, it_fragment->mm3_per_mm, it_fragment->width, it_fragment->height);
+    for (ExtrusionPathFragment &fragment : path_fragments)
+        extrusion_entities_append_paths(extrusions_in_out, std::move(fragment.polylines), { extrusion_role, fragment.flow });
 }
 
 // Support layer that is covered by some form of dense interface.
@@ -1529,7 +1534,7 @@ void generate_support_toolpaths(
                         filler, float(support_params.support_density),
                         // Extrusion parameters
                         ExtrusionRole::SupportMaterial, flow,
-                        support_params.with_sheath, false);
+                        support_params.with_sheath, false, support_params.prefer_clockwise_movements);
                 }
                 if (! tree_polygons.empty())
                     tree_supports_generate_paths(support_layer.support_fills.entities, tree_polygons, flow, support_params);
@@ -1564,7 +1569,7 @@ void generate_support_toolpaths(
                 // Extrusion parameters
                 (support_layer_id < slicing_params.base_raft_layers) ? ExtrusionRole::SupportMaterial : ExtrusionRole::SupportMaterialInterface, flow, 
                 // sheath at first layer
-                support_layer_id == 0, support_layer_id == 0);
+                support_layer_id == 0, support_layer_id == 0, support_params.prefer_clockwise_movements);
         }
     });
 
@@ -1732,7 +1737,8 @@ void generate_support_toolpaths(
                         // Filler and its parameters
                         filler, float(density),
                         // Extrusion parameters
-                        ExtrusionRole::SupportMaterialInterface, interface_flow);
+                        interface_as_base ? ExtrusionRole::SupportMaterial : ExtrusionRole::SupportMaterialInterface,
+                        interface_flow);
                 }
             };
             const bool top_interfaces = config.support_material_interface_layers.value != 0;
@@ -1804,7 +1810,7 @@ void generate_support_toolpaths(
                         filler, density,
                         // Extrusion parameters
                         ExtrusionRole::SupportMaterial, flow,
-                        sheath, no_sort);
+                        sheath, no_sort, support_params.prefer_clockwise_movements);
             }
 
             // Merge base_interface_layers to base_layers to avoid unneccessary retractions

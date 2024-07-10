@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2021 - 2023 Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillLightning_hpp_
 #define slic3r_FillLightning_hpp_
 
@@ -20,8 +24,10 @@ class Filler : public Slic3r::Fill
 {
 public:
     ~Filler() override = default;
+    bool is_self_crossing() override { return false; }
 
     Generator   *generator { nullptr };
+
 protected:
     Fill* clone() const override { return new Filler(*this); }
 

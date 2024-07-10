@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2022 - 2023 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 // Tree supports by Thomas Rahm, losely based on Tree Supports by CuraEngine.
 // Original source of Thomas Rahm's tree supports:
 // https://github.com/ThomasRahm/CuraEngine
@@ -15,7 +19,6 @@
 #include "../BuildVolume.hpp"
 #include "../ClipperUtils.hpp"
 #include "../EdgeGrid.hpp"
-#include "../Fill/Fill.hpp"
 #include "../Layer.hpp"
 #include "../Print.hpp"
 #include "../MultiPoint.hpp"
@@ -77,7 +80,7 @@ static inline void validate_range(const MultiPoint &mp)
     validate_range(mp.points);
 }
 
-static inline void validate_range(const Polygons &polygons) 
+[[maybe_unused]] static inline void validate_range(const Polygons &polygons) 
 {
     for (const Polygon &p : polygons)
         validate_range(p);
@@ -101,6 +104,7 @@ static inline void validate_range(const LineInformations &lines)
         validate_range(l);
 }
 
+/*
 static inline void check_self_intersections(const Polygons &polygons, const std::string_view message)
 {
 #ifdef TREE_SUPPORT_SHOW_ERRORS_WIN32
@@ -108,6 +112,7 @@ static inline void check_self_intersections(const Polygons &polygons, const std:
         ::MessageBoxA(nullptr, (std::string("TreeSupport infill self intersections: ") + std::string(message)).c_str(), "Bug detected!", MB_OK | MB_SYSTEMMODAL | MB_SETFOREGROUND | MB_ICONWARNING);
 #endif // TREE_SUPPORT_SHOW_ERRORS_WIN32
 }
+*/
 static inline void check_self_intersections(const ExPolygon &expoly, const std::string_view message)
 {
 #ifdef TREE_SUPPORT_SHOW_ERRORS_WIN32
@@ -202,8 +207,8 @@ static std::vector<std::pair<TreeSupportSettings, std::vector<size_t>>> group_me
     const int                support_enforce_layers = config.support_material_enforce_layers.value;
     std::vector<Polygons>    enforcers_layers{ print_object.slice_support_enforcers() };
     std::vector<Polygons>    blockers_layers{ print_object.slice_support_blockers() };
-    print_object.project_and_append_custom_facets(false, EnforcerBlockerType::ENFORCER, enforcers_layers);
-    print_object.project_and_append_custom_facets(false, EnforcerBlockerType::BLOCKER, blockers_layers);
+    print_object.project_and_append_custom_facets(false, TriangleStateType::ENFORCER, enforcers_layers);
+    print_object.project_and_append_custom_facets(false, TriangleStateType::BLOCKER, blockers_layers);
     const int                support_threshold      = config.support_material_threshold.value;
     const bool               support_threshold_auto = support_threshold == 0;
     // +1 makes the threshold inclusive
@@ -3457,7 +3462,9 @@ static void generate_support_areas(Print &print, const BuildVolume &build_volume
 
         SupportParameters            support_params(print_object);
         support_params.with_sheath = true;
-        support_params.support_density = 0;
+// Don't override the support density of tree supports, as the support density is used for raft.
+// The trees will have the density zeroed in tree_supports_generate_paths()
+//        support_params.support_density = 0;
 
         SupportGeneratorLayerStorage layer_storage;
         SupportGeneratorLayersPtr    top_contacts;

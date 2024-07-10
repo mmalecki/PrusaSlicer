@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2019 - 2023 Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka, Filip Sykala @Jony01, Tomáš Mészáros @tamasmeszaros
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_GLGizmoRotate_hpp_
 #define slic3r_GLGizmoRotate_hpp_
 
@@ -173,8 +177,6 @@ private:
 
     class RotoptimzeWindow
     {
-        ImGuiWrapper *m_imgui = nullptr;
-
     public:
         struct State {
             float  accuracy  = 1.f;

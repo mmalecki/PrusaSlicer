@@ -1,3 +1,12 @@
+///|/ Copyright (c) Prusa Research 2016 - 2022 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2016 Alessandro Ranellucci @alranel
+///|/
+///|/ ported from lib/Slic3r/Fill/Rectilinear.pm:
+///|/ Copyright (c) Prusa Research 2016 Vojtěch Bubník @bubnikv
+///|/ Copyright (c) Slic3r 2011 - 2015 Alessandro Ranellucci @alranel
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #ifndef slic3r_FillPlanePath_hpp_
 #define slic3r_FillPlanePath_hpp_
 
@@ -17,6 +26,7 @@ class FillPlanePath : public Fill
 {
 public:
     ~FillPlanePath() override = default;
+    bool is_self_crossing() override { return false; }
 
 protected:
     void _fill_surface_single(

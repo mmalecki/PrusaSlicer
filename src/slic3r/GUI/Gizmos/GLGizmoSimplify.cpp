@@ -1,3 +1,7 @@
+///|/ Copyright (c) Prusa Research 2021 - 2023 Oleksandra Iushchenko @YuSanka, Lukáš Hejl @hejllukas, Enrico Turri @enricoturri1966, David Kocík @kocikdav, Filip Sykala @Jony01, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv
+///|/
+///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
+///|/
 #include "GLGizmoSimplify.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
@@ -37,7 +41,7 @@ static void call_after_if_active(std::function<void()> fn, GUI_App* app = &wxGet
     });
 }
 
-static std::set<ObjectID> get_volume_ids(const Selection &selection)
+static std::set<ObjectID> get_selected_volume_ids(const Selection &selection)
 {
     const Selection::IndicesList &volume_ids = selection.get_volume_idxs();
     const ModelObjectPtrs &model_objects     = selection.get_model()->objects;
@@ -64,20 +68,6 @@ static std::set<ObjectID> get_volume_ids(const Selection &selection)
     return result;
 }
 
-// return ModelVolume from selection by object id
-static ModelVolume *get_volume(const ObjectID &id, const Selection &selection) {
-    const Selection::IndicesList &volume_ids = selection.get_volume_idxs();
-    const ModelObjectPtrs &model_objects     = selection.get_model()->objects;
-    for (auto volume_id : volume_ids) {
-        const GLVolume *selected_volume = selection.get_volume(volume_id);
-        const GLVolume::CompositeID &cid = selected_volume->composite_id;
-        ModelObject *obj    = model_objects[cid.object_id];
-        ModelVolume *volume = obj->volumes[cid.volume_id];
-        if (id == volume->id()) return volume;
-    }
-    return nullptr;
-}
-
 static std::string create_volumes_name(const std::set<ObjectID>& ids, const Selection &selection){
     assert(!ids.empty());
     std::string name;
@@ -88,7 +78,7 @@ static std::string create_volumes_name(const std::set<ObjectID>& ids, const Sele
         else
             name += " + ";
 
-        const ModelVolume *volume = get_volume(id, selection);
+        const ModelVolume *volume = get_selected_volume(id, selection);
         assert(volume != nullptr);
         name += volume->name;
     }
@@ -181,11 +171,11 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
 {
     create_gui_cfg();
     const Selection &selection = m_parent.get_selection();
-    auto act_volume_ids = get_volume_ids(selection);
+    auto act_volume_ids = get_selected_volume_ids(selection);
     if (act_volume_ids.empty()) {
         stop_worker_thread_request();
         close();
-        if (! m_parent.get_selection().is_single_volume()) {
+        if (m_parent.get_selection().volumes_count() != 1) {
             MessageDialog msg((wxWindow*)wxGetApp().mainframe,
                 _L("Simplification is currently only allowed when a single part is selected"),
                 _L("Error"));
@@ -272,14 +262,14 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
     bool is_multipart = (m_volume_ids.size() > 1);
     int flag = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize |
                ImGuiWindowFlags_NoCollapse;
-    m_imgui->begin(on_get_name(), flag);
-    m_imgui->text_colored(ImGuiWrapper::COL_ORANGE_LIGHT, tr_mesh_name + ":");
+    ImGuiPureWrap::begin(on_get_name(), flag);
+    ImGuiPureWrap::text_colored(ImGuiPureWrap::COL_ORANGE_LIGHT, tr_mesh_name + ":");
     ImGui::SameLine(m_gui_cfg->top_left_width);
-    m_imgui->text(m_volumes_name);
-    m_imgui->text_colored(ImGuiWrapper::COL_ORANGE_LIGHT, tr_triangles + ":");
+    ImGuiPureWrap::text(m_volumes_name);
+    ImGuiPureWrap::text_colored(ImGuiPureWrap::COL_ORANGE_LIGHT, tr_triangles + ":");
     ImGui::SameLine(m_gui_cfg->top_left_width);
 
-    m_imgui->text(std::to_string(m_original_triangle_count));
+    ImGuiPureWrap::text(std::to_string(m_original_triangle_count));
 
     ImGui::Separator();
 
@@ -353,7 +343,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
     ImGui::Checkbox(_u8L("Show wireframe").c_str(), &m_show_wireframe);
 
     m_imgui->disabled_begin(is_cancelling);
-    if (m_imgui->button(_L("Close"))) {
+    if (ImGuiPureWrap::button(_u8L("Close"))) {
         close();
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && is_cancelling)
         ImGui::SetTooltip("%s", _u8L("Operation already cancelling. Please wait few seconds.").c_str());
@@ -362,7 +352,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
     ImGui::SameLine();
 
     m_imgui->disabled_begin(is_worker_running || ! is_result_ready);
-    if (m_imgui->button(_L("Apply"))) {
+    if (ImGuiPureWrap::button(_u8L("Apply"))) {
         apply_simplify();
     } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && is_worker_running)
         ImGui::SetTooltip("%s", _u8L("Can't apply when proccess preview.").c_str());
@@ -376,7 +366,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
         ImVec2 progress_size(m_gui_cfg->input_width, 0.f);
         ImGui::ProgressBar(progress / 100., progress_size, progress_text.c_str());
     }
-    m_imgui->end();
+    ImGuiPureWrap::end();
     if (start_process)
         process();
 }
@@ -470,7 +460,7 @@ void GLGizmoSimplify::process()
     const Selection& selection = m_parent.get_selection();
     State::Data its;
     for (const auto &id : m_volume_ids) {
-        const ModelVolume *volume = get_volume(id, selection);
+        const ModelVolume *volume = get_selected_volume(id, selection);
         its[id] = std::make_unique<indexed_triangle_set>(volume->mesh().its); // copy
     }
     
@@ -548,7 +538,7 @@ void GLGizmoSimplify::apply_simplify() {
     for (const auto &item: m_state.result) {
         const ObjectID &id = item.first;
         const indexed_triangle_set &its = *item.second;
-        ModelVolume *volume = get_volume(id, selection);
+        ModelVolume *volume = get_selected_volume(id, selection);
         assert(volume != nullptr);
         ModelObject *obj = volume->get_object();
 
@@ -589,16 +579,16 @@ void GLGizmoSimplify::on_set_state()
 
 void GLGizmoSimplify::create_gui_cfg() { 
     if (m_gui_cfg.has_value()) return;
-    int    space_size = m_imgui->calc_text_size(std::string_view{":MM"}).x;
+    int    space_size = ImGuiPureWrap::calc_text_size(std::string_view{":MM"}).x;
     GuiCfg cfg;
-    cfg.top_left_width = std::max(m_imgui->calc_text_size(tr_mesh_name).x,
-                                  m_imgui->calc_text_size(tr_triangles).x) 
+    cfg.top_left_width = std::max(ImGuiPureWrap::calc_text_size(tr_mesh_name).x,
+                                  ImGuiPureWrap::calc_text_size(tr_triangles).x) 
         + space_size;
 
     const float radio_size = ImGui::GetFrameHeight();
     cfg.bottom_left_width =
-        std::max(m_imgui->calc_text_size(tr_detail_level).x,
-                 m_imgui->calc_text_size(tr_decimate_ratio).x) +
+        std::max(ImGuiPureWrap::calc_text_size(tr_detail_level).x,
+                 ImGuiPureWrap::calc_text_size(tr_decimate_ratio).x) +
         space_size + radio_size;
 
     cfg.input_width   = cfg.bottom_left_width * 1.5;
@@ -687,7 +677,7 @@ void GLGizmoSimplify::update_model(const State::Data &data)
         auto color = glmodel.get_color();
         // when not reset it keeps old shape
         glmodel.reset();
-#if ENABLE_OPENGL_ES
+#if SLIC3R_OPENGL_ES
         GLModel::Geometry init_data;
         init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3N3E3 };
         init_data.reserve_vertices(3 * its.indices.size());
@@ -710,7 +700,7 @@ void GLGizmoSimplify::update_model(const State::Data &data)
         glmodel.init_from(std::move(init_data));
 #else
         glmodel.init_from(its);
-#endif // ENABLE_OPENGL_ES
+#endif // SLIC3R_OPENGL_ES
         glmodel.set_color(color);
 
         m_triangle_count += its.indices.size();
@@ -724,7 +714,7 @@ void GLGizmoSimplify::on_render()
     const Selection &             selection  = m_parent.get_selection();
     
     // Check that the GLVolume still belongs to the ModelObject we work on.
-    if (m_volume_ids != get_volume_ids(selection)) return;
+    if (m_volume_ids != get_selected_volume_ids(selection)) return;
 
     const ModelObjectPtrs &model_objects = selection.get_model()->objects;
     const Selection::IndicesList &volume_idxs = selection.get_volume_idxs();
@@ -747,11 +737,7 @@ void GLGizmoSimplify::on_render()
 
         const Transform3d trafo_matrix = selected_volume->world_matrix();
         auto* gouraud_shader = wxGetApp().get_shader("gouraud_light");
-#if ENABLE_GL_CORE_PROFILE || ENABLE_OPENGL_ES
         bool depth_test_enabled = ::glIsEnabled(GL_DEPTH_TEST);
-#else
-        glsafe(::glPushAttrib(GL_DEPTH_TEST));
-#endif // ENABLE_GL_CORE_PROFILE || ENABLE_OPENGL_ES
         glsafe(::glEnable(GL_DEPTH_TEST));
         gouraud_shader->start_using();
         const Camera& camera = wxGetApp().plater()->get_camera();
@@ -765,37 +751,31 @@ void GLGizmoSimplify::on_render()
         gouraud_shader->stop_using();
 
         if (m_show_wireframe) {
-#if ENABLE_OPENGL_ES
+#if SLIC3R_OPENGL_ES
             auto* contour_shader = wxGetApp().get_shader("wireframe");
 #else
             auto *contour_shader = wxGetApp().get_shader("mm_contour");
-#endif // ENABLE_OPENGL_ES
+#endif // SLIC3R_OPENGL_ES
             contour_shader->start_using();
             contour_shader->set_uniform("offset", OpenGLManager::get_gl_info().is_mesa() ? 0.0005 : 0.00001);
             contour_shader->set_uniform("view_model_matrix", view_model_matrix);
             contour_shader->set_uniform("projection_matrix", camera.get_projection_matrix());
             const ColorRGBA color = glmodel.get_color();
             glmodel.set_color(ColorRGBA::WHITE());
-#if ENABLE_GL_CORE_PROFILE
+#if !SLIC3R_OPENGL_ES
             if (!OpenGLManager::get_gl_info().is_core_profile())
-#endif // ENABLE_GL_CORE_PROFILE
                 glsafe(::glLineWidth(1.0f));
-#if !ENABLE_OPENGL_ES
             glsafe(::glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-#endif // !ENABLE_OPENGL_ES
+#endif // !SLIC3R_OPENGL_ES
             glmodel.render();
-#if !ENABLE_OPENGL_ES
+#if !SLIC3R_OPENGL_ES
             glsafe(::glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
-#endif // !ENABLE_OPENGL_ES
+#endif // !SLIC3R_OPENGL_ES
             glmodel.set_color(color);
             contour_shader->stop_using();
         }
-#if ENABLE_GL_CORE_PROFILE || ENABLE_OPENGL_ES
         if (depth_test_enabled)
             glsafe(::glEnable(GL_DEPTH_TEST));
-#else
-        glsafe(::glPopAttrib());
-#endif // ENABLE_GL_CORE_PROFILE || ENABLE_OPENGL_ES
     }
 }
 
